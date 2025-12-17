@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
   <!ENTITY name      "network-info">
   <!ENTITY author    "Custom">
-  <!ENTITY version   "2024.12.17b">
+  <!ENTITY version   "2024.12.17c">
   <!ENTITY launch    "Tools/NetworkInfo">
   <!ENTITY pluginURL "https://raw.githubusercontent.com/baozaolaowu/unraid-docker-network/master/network-info.plg">
 ]>
@@ -96,7 +96,7 @@ sort($usedIPs, SORT_NATURAL);
 </INLINE>
 </FILE>
 
-<!-- Detail page (Compact) -->
+<!-- Detail page (Compact, Side-by-Side) -->
 <FILE Name="/usr/local/emhttp/plugins/&name;/NetworkInfoDetail.page">
 <INLINE>
 <![CDATA[
@@ -154,101 +154,52 @@ foreach (array_filter(explode("\n", trim($vms))) as $vmName) {
     $custom[] = ['name' => $vmName, 'network' => 'vm', 'ip' => $vmIp, 'ports' => ''];
 }
 
-// Sort
 usort($custom, function($a, $b) { return strnatcmp($a['ip'] ?: '999', $b['ip'] ?: '999'); });
 usort($bridge, function($a, $b) { return strcasecmp($a['name'], $b['name']); });
 ?>
 
 <style>
-/* Compact styles */
-.net-container {
-    font-size: 11px;
-    color: var(--text-default);
-}
-.net-section {
-    margin-top: 15px;
-    margin-bottom: 5px;
-    padding: 4px 8px;
-    background: var(--bg-header, #333);
-    color: var(--text-header, #fff);
-    font-weight: bold;
-    border-radius: 3px;
-    display: flex;
-    justify-content: space-between;
-}
-.net-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-.net-table th {
-    text-align: left;
-    padding: 4px 8px;
-    color: var(--text-muted, #888);
-    border-bottom: 1px solid var(--border-default, #444);
-    font-weight: normal;
-}
-.net-table td {
-    padding: 2px 8px;
-    border-bottom: 1px solid var(--border-light, #222);
-    height: 22px;
-}
-.net-table tr:hover td {
-    background: rgba(255,255,255,0.03);
-}
+.net-wrap { display: flex; gap: 20px; font-size: 11px; }
+.net-col { flex: 1; min-width: 0; }
+.net-hdr { background: #1a1a1a; color: #fff; padding: 4px 8px; font-weight: bold; display: flex; justify-content: space-between; border-radius: 3px 3px 0 0; position: relative; z-index: 2; }
+.net-tbl { width: 100%; border-collapse: collapse; background: #0d0d0d; }
+.net-tbl th { text-align: left; padding: 3px 6px; color: #888; font-weight: normal; font-size: 10px; border-bottom: 1px solid #333; background: #111; position: sticky; top: 0; }
+.net-tbl td { padding: 2px 6px; border-bottom: 1px solid #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+.net-tbl tr:hover td { background: #1a1a1a; }
 .c-ip { font-family: monospace; color: #4ade80; }
-.c-port { font-family: monospace; color: #fb923c; }
-.c-type { 
-    display: inline-block; 
-    padding: 0 4px; 
-    border-radius: 2px;
-    background: #444;
-    color: #ccc;
-    font-size: 10px;
-}
-.type-vm { background: #7b1fa2; color: #fff; }
-.type-host { background: #e65100; color: #fff; }
-.type-bridge { background: #1565c0; color: #fff; }
-.type-bond0 { background: #00695c; color: #fff; }
+.c-pt { font-family: monospace; color: #fb923c; font-size: 10px; }
+.c-nm { color: #ccc; }
+.c-tg { display: inline-block; padding: 0 3px; border-radius: 2px; font-size: 9px; background: #333; color: #aaa; }
+.c-tg.vm { background: #7b1fa2; color: #fff; }
+.c-tg.host { background: #e65100; color: #fff; }
+.c-tg.bridge { background: #1565c0; color: #fff; }
+.c-tg.bond0 { background: #00695c; color: #fff; }
 </style>
 
-<div class="net-container">
-
-<div class="net-section">
-    <span>Custom Network</span>
-    <span><?=count($custom)?></span>
-</div>
-<table class="net-table">
-<thead><tr><th width="120">IP</th><th width="150">Ports</th><th>Name</th><th width="80">Type</th></tr></thead>
+<div class="net-wrap">
+<div class="net-col">
+<div class="net-hdr"><span>Custom Network</span><span><?=count($custom)?></span></div>
+<table class="net-tbl">
+<thead><tr><th>IP</th><th>Ports</th><th>Name</th><th>Type</th></tr></thead>
 <tbody>
 <? foreach ($custom as $c): ?>
-<tr>
-    <td class="c-ip"><?=$c['ip']?:'-'?></td>
-    <td class="c-port"><?=$c['ports']?:'-'?></td>
-    <td><?=$c['name']?></td>
-    <td><span class="c-type type-<?=$c['network']?>"><?=$c['network']?></span></td>
-</tr>
+<tr><td class="c-ip"><?=$c['ip']?:'-'?></td><td class="c-pt"><?=$c['ports']?:'-'?></td><td class="c-nm" title="<?=$c['name']?>"><?=$c['name']?></td><td><span class="c-tg <?=$c['network']?>"><?=$c['network']?></span></td></tr>
 <? endforeach; ?>
 </tbody>
 </table>
-
-<div class="net-section">
-    <span>Bridge/Host Network</span>
-    <span><?=count($bridge)?></span>
 </div>
-<table class="net-table">
-<thead><tr><th width="120">IP</th><th>Ports</th><th>Name</th><th width="80">Type</th></tr></thead>
+
+<div class="net-col">
+<div class="net-hdr"><span>Bridge/Host</span><span><?=count($bridge)?></span></div>
+<table class="net-tbl">
+<thead><tr><th>IP</th><th>Ports</th><th>Name</th><th>Type</th></tr></thead>
 <tbody>
 <? foreach ($bridge as $c): ?>
-<tr>
-    <td class="c-ip"><?=$host_ip?></td>
-    <td class="c-port"><?=$c['ports']?:'-'?></td>
-    <td><?=$c['name']?></td>
-    <td><span class="c-type type-<?=$c['network']?>"><?=$c['network']?></span></td>
-</tr>
+<tr><td class="c-ip"><?=$host_ip?></td><td class="c-pt"><?=$c['ports']?:'-'?></td><td class="c-nm" title="<?=$c['name']?>"><?=$c['name']?></td><td><span class="c-tg <?=$c['network']?>"><?=$c['network']?></span></td></tr>
 <? endforeach; ?>
 </tbody>
 </table>
-
+</div>
 </div>
 ]]>
 </INLINE>
