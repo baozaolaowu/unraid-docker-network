@@ -1,0 +1,273 @@
+<?xml version='1.0' standalone='yes'?>
+<!DOCTYPE PLUGIN [
+  <!ENTITY name      "network-info">
+  <!ENTITY author    "Custom">
+  <!ENTITY version   "2024.12.17b">
+  <!ENTITY launch    "Tools/NetworkInfo">
+  <!ENTITY pluginURL "https://raw.githubusercontent.com/YOUR_USERNAME/unraid-network-info/main/network-info.plg">
+]>
+
+<PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" min="6.9.0">
+
+<CHANGES>
+###2024.12.17b
+- Compact UI layout
+- Separated Overview and Details pages
+- Dark mode support
+</CHANGES>
+
+<!-- Main page - Overview (Compact) -->
+<FILE Name="/usr/local/emhttp/plugins/&name;/NetworkInfo.page">
+<INLINE>
+<![CDATA[
+Menu="Tools"
+Title="Network Info"
+Icon="icon-network"
+---
+<?
+$host_ip = trim(shell_exec("hostname -I | awk '{print $1}'"));
+
+// Get used ports
+$usedPorts = [];
+$containers_json = shell_exec("docker ps --format '{{.Ports}}' 2>/dev/null");
+foreach (explode("\n", $containers_json) as $line) {
+    if (preg_match_all('/0\.0\.0\.0:(\d+)->/', $line, $matches)) {
+        foreach ($matches[1] as $p) $usedPorts[] = (int)$p;
+    }
+}
+$usedPorts = array_unique($usedPorts);
+sort($usedPorts, SORT_NUMERIC);
+
+// Get used IPs
+$usedIPs = [];
+$inspect = shell_exec("docker ps -q 2>/dev/null | xargs -r docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 2>/dev/null");
+foreach (explode("\n", $inspect) as $ip) {
+    $ip = trim($ip);
+    if ($ip && !preg_match('/^172\./', $ip)) $usedIPs[] = $ip;
+}
+// VM IPs from ARP
+$arpOutput = shell_exec("arp -a 2>/dev/null");
+foreach (explode("\n", $arpOutput) as $line) {
+    if (preg_match('/\(([0-9.]+)\)/', $line, $m)) {
+        $ip = $m[1];
+        if (!preg_match('/^172\./', $ip) && $ip != $host_ip) $usedIPs[] = $ip;
+    }
+}
+$usedIPs = array_unique($usedIPs);
+sort($usedIPs, SORT_NATURAL);
+?>
+
+<style>
+.ov-box {
+    font-size: 11px;
+    color: var(--text-default);
+    line-height: 1.5;
+}
+.ov-row { margin-bottom: 6px; }
+.ov-label { font-weight: bold; color: var(--text-header, #fff); margin-right: 4px; }
+.ov-val { font-family: monospace; }
+.c-port { color: #fb923c; }
+.c-ip { color: #4ade80; }
+.ov-link { margin-top: 8px; }
+.ov-link a { 
+    font-weight: bold; 
+    color: #1565c0; 
+    text-decoration: none;
+    border-bottom: 1px dotted #1565c0;
+}
+</style>
+
+<div class="ov-box">
+    <div class="ov-row">
+        <span class="ov-label">Host:</span>
+        <span class="ov-val c-ip"><?=$host_ip?></span>
+    </div>
+    <div class="ov-row">
+        <span class="ov-label">Ports:</span>
+        <span class="ov-val c-port"><?=implode(', ', $usedPorts) ?: '-'?></span>
+    </div>
+    <div class="ov-row">
+        <span class="ov-label">IPs:</span>
+        <span class="ov-val c-ip"><?=implode(', ', $usedIPs) ?: '-'?></span>
+    </div>
+    <div class="ov-link"><a href="/Tools/NetworkInfoDetail">View Details &gt;&gt;</a></div>
+</div>
+]]>
+</INLINE>
+</FILE>
+
+<!-- Detail page (Compact) -->
+<FILE Name="/usr/local/emhttp/plugins/&name;/NetworkInfoDetail.page">
+<INLINE>
+<![CDATA[
+Menu="NetworkInfo"
+Title="Details"
+Icon="icon-network"
+---
+<?
+$host_ip = trim(shell_exec("hostname -I | awk '{print $1}'"));
+$custom = [];
+$bridge = [];
+
+$arpTable = [];
+$arpOutput = shell_exec("arp -a 2>/dev/null");
+foreach (explode("\n", $arpOutput) as $line) {
+    if (preg_match('/\(([0-9.]+)\) at ([0-9a-f:]+)/i', $line, $m)) {
+        $arpTable[strtolower($m[2])] = $m[1];
+    }
+}
+
+$containers_json = shell_exec("docker ps --format '{{json .}}' 2>/dev/null");
+foreach (array_filter(explode("\n", trim($containers_json))) as $line) {
+    $c = json_decode($line, true);
+    if (!$c) continue;
+    $name = $c['Names'] ?? '';
+    $portsRaw = $c['Ports'] ?? '';
+    $simplePorts = [];
+    if (preg_match_all('/0\.0\.0\.0:(\d+)->/', $portsRaw, $matches)) {
+        $simplePorts = array_unique($matches[1]);
+        sort($simplePorts, SORT_NUMERIC);
+    }
+    $ports = implode(',', $simplePorts);
+    $inspect = shell_exec("docker inspect $name --format '{{range \$k, \$v := .NetworkSettings.Networks}}{{\$k}} {{\$v.IPAddress}}{{end}}' 2>/dev/null");
+    $parts = explode(' ', trim($inspect));
+    $network = $parts[0] ?? '';
+    $ip = $parts[1] ?? '';
+    $item = ['name' => $name, 'network' => $network, 'ip' => $ip, 'ports' => $ports];
+    if (in_array(strtolower($network), ['bridge', 'host'])) {
+        $bridge[] = $item;
+    } else {
+        $custom[] = $item;
+    }
+}
+
+$vms = shell_exec("virsh list --name --state-running 2>/dev/null");
+foreach (array_filter(explode("\n", trim($vms))) as $vmName) {
+    $vmName = trim($vmName);
+    if (empty($vmName)) continue;
+    $vmIp = '';
+    $iflist = shell_exec("virsh domiflist \"$vmName\" 2>/dev/null");
+    if (preg_match('/([0-9a-f:]{17})/i', $iflist, $macMatch)) {
+        $vmMac = strtolower($macMatch[1]);
+        if (isset($arpTable[$vmMac])) $vmIp = $arpTable[$vmMac];
+    }
+    $custom[] = ['name' => $vmName, 'network' => 'vm', 'ip' => $vmIp, 'ports' => ''];
+}
+
+// Sort
+usort($custom, function($a, $b) { return strnatcmp($a['ip'] ?: '999', $b['ip'] ?: '999'); });
+usort($bridge, function($a, $b) { return strcasecmp($a['name'], $b['name']); });
+?>
+
+<style>
+/* Compact styles */
+.net-container {
+    font-size: 11px;
+    color: var(--text-default);
+}
+.net-section {
+    margin-top: 15px;
+    margin-bottom: 5px;
+    padding: 4px 8px;
+    background: var(--bg-header, #333);
+    color: var(--text-header, #fff);
+    font-weight: bold;
+    border-radius: 3px;
+    display: flex;
+    justify-content: space-between;
+}
+.net-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.net-table th {
+    text-align: left;
+    padding: 4px 8px;
+    color: var(--text-muted, #888);
+    border-bottom: 1px solid var(--border-default, #444);
+    font-weight: normal;
+}
+.net-table td {
+    padding: 2px 8px;
+    border-bottom: 1px solid var(--border-light, #222);
+    height: 22px;
+}
+.net-table tr:hover td {
+    background: rgba(255,255,255,0.03);
+}
+.c-ip { font-family: monospace; color: #4ade80; }
+.c-port { font-family: monospace; color: #fb923c; }
+.c-type { 
+    display: inline-block; 
+    padding: 0 4px; 
+    border-radius: 2px;
+    background: #444;
+    color: #ccc;
+    font-size: 10px;
+}
+.type-vm { background: #7b1fa2; color: #fff; }
+.type-host { background: #e65100; color: #fff; }
+.type-bridge { background: #1565c0; color: #fff; }
+.type-bond0 { background: #00695c; color: #fff; }
+</style>
+
+<div class="net-container">
+
+<div class="net-section">
+    <span>Custom Network</span>
+    <span><?=count($custom)?></span>
+</div>
+<table class="net-table">
+<thead><tr><th width="120">IP</th><th width="150">Ports</th><th>Name</th><th width="80">Type</th></tr></thead>
+<tbody>
+<? foreach ($custom as $c): ?>
+<tr>
+    <td class="c-ip"><?=$c['ip']?:'-'?></td>
+    <td class="c-port"><?=$c['ports']?:'-'?></td>
+    <td><?=$c['name']?></td>
+    <td><span class="c-type type-<?=$c['network']?>"><?=$c['network']?></span></td>
+</tr>
+<? endforeach; ?>
+</tbody>
+</table>
+
+<div class="net-section">
+    <span>Bridge/Host Network</span>
+    <span><?=count($bridge)?></span>
+</div>
+<table class="net-table">
+<thead><tr><th width="120">IP</th><th>Ports</th><th>Name</th><th width="80">Type</th></tr></thead>
+<tbody>
+<? foreach ($bridge as $c): ?>
+<tr>
+    <td class="c-ip"><?=$host_ip?></td>
+    <td class="c-port"><?=$c['ports']?:'-'?></td>
+    <td><?=$c['name']?></td>
+    <td><span class="c-type type-<?=$c['network']?>"><?=$c['network']?></span></td>
+</tr>
+<? endforeach; ?>
+</tbody>
+</table>
+
+</div>
+]]>
+</INLINE>
+</FILE>
+
+<!-- Post install -->
+<FILE Run="/bin/bash">
+<INLINE>
+echo "Network Info plugin installed successfully"
+</INLINE>
+</FILE>
+
+<!-- Remove plugin -->
+<FILE Run="/bin/bash" Method="remove">
+<INLINE>
+rm -rf /usr/local/emhttp/plugins/&name;
+rm -rf /boot/config/plugins/&name;
+echo "Network Info plugin removed"
+</INLINE>
+</FILE>
+
+</PLUGIN>

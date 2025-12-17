@@ -1,0 +1,117 @@
+Menu="Utilities"
+Title="Network Info"
+Icon="icon-share"
+---
+<?php
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+function logMsg($msg) {
+    file_put_contents('/tmp/network-info.log', date('Y-m-d H:i:s') . " - $msg\n", FILE_APPEND);
+}
+
+logMsg("页面加载上");
+
+$host_ip = trim(shell_exec("hostname -I | awk '{print $1}'") ?? '');
+logMsg("主机 IP: $host_ip");
+
+function get_containers() {
+    global $host_ip;
+    $custom = [];
+    $bridge = [];
+    
+    $containers_json = shell_exec("docker ps --format '{{json .}}' 2>&1");
+    $lines = array_filter(explode("\n", trim($containers_json)));
+    
+    foreach ($lines as $line) {
+        $c = json_decode($line, true);
+        if (!$c) continue;
+        
+        $name = $c['Names'] ?? '';
+        $ports = $c['Ports'] ?? '';
+        
+        $inspect = shell_exec("docker inspect $name --format '{{range \$k, \$v := .NetworkSettings.Networks}}{{\$k}} {{\$v.IPAddress}}{{end}}' 2>/dev/null");
+        $parts = explode(' ', trim($inspect));
+        $network = $parts[0] ?? '';
+        $ip = $parts[1] ?? '';
+        
+        $item = ['name' => $name, 'network' => $network, 'ip' => $ip, 'ports' => $ports];
+        
+        if (in_array(strtolower($network), ['bridge', 'host'])) {
+            $bridge[] = $item;
+        } else {
+            $custom[] = $item;
+        }
+    }
+    
+    // 获取 VM 信息
+    $vms_output = shell_exec("virsh list --all 2>&1");
+    $vm_lines = explode("\n", $vms_output);
+    foreach ($vm_lines as $line) {
+        if (preg_match('/^\s*(\d+|-)\s+(\S+)\s+(running|shut off)/', $line, $m)) {
+            if ($m[3] === 'running') {
+                $custom[] = ['name' => $m[2], 'network' => 'vm', 'ip' => '', 'ports' => ''];
+            }
+        }
+    }
+    
+    logMsg("Custom: " . count($custom) . ", Bridge: " . count($bridge));
+    return ['custom' => $custom, 'bridge' => $bridge];
+}
+
+$data = get_containers();
+?>
+
+<style>
+.network-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+.network-table th, .network-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #e0e0e0; }
+.network-table th { background: #f5f5f5; font-weight: 600; font-size: 12px; text-transform: uppercase; color: #666; }
+.network-table tr:hover { background: #fafafa; }
+.section-title { font-size: 16px; font-weight: 600; margin: 20px 0 10px 0; }
+.tag { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 11px; }
+.tag-vm { background: #f3e5f5; color: #7b1fa2; }
+.tag-host { background: #fff3e0; color: #e65100; }
+.tag-bridge { background: #e3f2fd; color: #1565c0; }
+.ip { font-family: monospace; color: #0f7b6c; font-weight: 600; }
+.ports { font-family: monospace; color: #d9730d; font-size: 12px; }
+</style>
+
+<p>主机 IP: <strong><?=$host_ip?></strong></p>
+
+<div class="section-title">Custom Network (<?=count($data['custom'])?>)</div>
+<table class="network-table">
+    <thead><tr><th>IP</th><th>Ports</th><th>Name</th><th>Type</th></tr></thead>
+    <tbody>
+        <?php foreach ($data['custom'] as $c): ?>
+        <tr>
+            <td class="ip"><?=$c['ip'] ?: '-'?></td>
+            <td class="ports"><?=$c['ports'] ?: '-'?></td>
+            <td><?=$c['name']?></td>
+            <td><span class="tag tag-<?=$c['network']?>"><?=$c['network']?></span></td>
+        </tr>
+        <?php endforeach; ?>
+        <?php if (empty($data['custom'])): ?>
+        <tr><td colspan="4" style="text-align:center;color:#999;">None</td></tr>
+        <?php endif; ?>
+    </tbody>
+</table>
+
+<div class="section-title">Bridge/Host Network (<?=count($data['bridge'])?>)</div>
+<table class="network-table">
+    <thead><tr><th>IP</th><th>Ports</th><th>Name</th><th>Type</th></tr></thead>
+    <tbody>
+        <?php foreach ($data['bridge'] as $c): ?>
+        <tr>
+            <td class="ip"><?=$host_ip?></td>
+            <td class="ports"><?=$c['ports'] ?: '-'?></td>
+            <td><?=$c['name']?></td>
+            <td><span class="tag tag-<?=$c['network']?>"><?=$c['network']?></span></td>
+        </tr>
+        <?php endforeach; ?>
+        <?php if (empty($data['bridge'])): ?>
+        <tr><td colspan="4" style="text-align:center;color:#999;">None</td></tr>
+        <?php endif; ?>
+    </tbody>
+</table>
+
+<p style="color:#999;font-size:12px;">日志: /tmp/network-info.log</p>
