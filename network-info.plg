@@ -4,7 +4,7 @@
   <!ENTITY author    "Custom">
   <!ENTITY version   "2024.12.17b">
   <!ENTITY launch    "Tools/NetworkInfo">
-  <!ENTITY pluginURL "https://raw.githubusercontent.com/YOUR_USERNAME/unraid-network-info/main/network-info.plg">
+  <!ENTITY pluginURL "https://raw.githubusercontent.com/baozaolaowu/unraid-docker-network/master/network-info.plg">
 ]>
 
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" min="6.9.0">
