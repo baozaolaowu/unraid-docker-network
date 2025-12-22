@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
   <!ENTITY name      "network-info">
   <!ENTITY author    "Custom">
-  <!ENTITY version   "2024.12.22c">
+  <!ENTITY version   "2024.12.22d">
   <!ENTITY launch    "Tools/NetworkInfo">
   <!ENTITY pluginURL "https://raw.githubusercontent.com/baozaolaowu/unraid-docker-network/master/network-info.plg">
 ]>
@@ -105,32 +105,6 @@ Title="Details"
 Icon="icon-network"
 ---
 <?
-// handle Ajax Save
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']??'') === 'save_override') {
-    $file = '/boot/config/plugins/network-info/overrides.json';
-    $dir = dirname($file);
-    if (!is_dir($dir)) @mkdir($dir, 0777, true);
-    
-    $raw = file_exists($file) ? file_get_contents($file) : '{}';
-    $data = json_decode($raw, true) ?: [];
-    
-    $name = $_POST['name'] ?? '';
-    // Store empty string if user clears it; remove entry if user wants to revert? 
-    // Let's assume saving empty strings means "display empty". 
-    // If both are empty, maybe remove? For now, just save what is sent.
-    
-    if ($name) {
-        $data[$name] = [
-            'ip' => $_POST['ip'] ?? '', 
-            'ports' => $_POST['ports'] ?? ''
-        ];
-        file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT));
-    }
-    
-    echo json_encode(['success' => true]);
-    exit;
-}
-
 // Load Overrides
 $overrideFile = '/boot/config/plugins/network-info/overrides.json';
 $overrides = file_exists($overrideFile) ? (json_decode(file_get_contents($overrideFile), true) ?: []) : [];
@@ -214,8 +188,8 @@ function enableEdit(btn) {
     var ipVal = ipCell.getAttribute('data-val');
     var portVal = portCell.getAttribute('data-val');
     
-    ipCell.innerHTML = '<input type="text" class="edit-input" value="'+ipVal+'" style="width:90%;color:#000;">';
-    portCell.innerHTML = '<input type="text" class="edit-input" value="'+portVal+'" style="width:90%;color:#000;">';
+    ipCell.innerHTML = '<input type="text" class="edit-input" value="'+ipVal+'" style="width:95%;color:#000;font-size:12px;padding:2px;">';
+    portCell.innerHTML = '<input type="text" class="edit-input" value="'+portVal+'" style="width:95%;color:#000;font-size:12px;padding:2px;">';
     
     btn.style.display = 'none';
     row.querySelector('.save-btn').style.display = 'inline-block';
