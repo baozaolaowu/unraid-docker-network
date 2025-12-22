@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
   <!ENTITY name      "network-info">
   <!ENTITY author    "Custom">
-  <!ENTITY version   "2024.12.22b">
+  <!ENTITY version   "2024.12.22c">
   <!ENTITY launch    "Tools/NetworkInfo">
   <!ENTITY pluginURL "https://raw.githubusercontent.com/baozaolaowu/unraid-docker-network/master/network-info.plg">
 ]>
